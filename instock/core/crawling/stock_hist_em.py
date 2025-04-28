@@ -4,6 +4,9 @@
 Date: 2022/6/19 15:26
 Desc: 东方财富网-行情首页-沪深京 A 股
 """
+import random
+import time
+
 import requests
 import pandas as pd
 import math
@@ -18,23 +21,45 @@ def stock_zh_a_spot_em() -> pd.DataFrame:
     :rtype: pandas.DataFrame
     """
     url = "http://82.push2.eastmoney.com/api/qt/clist/get"
-    page_size = 50
+    page_size = 100
     page_current = 1
     params = {
         "pn": page_current,
         "pz": page_size,
         "po": "1",
         "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "ut": "fa5fd1943c7b386f172d6893dbfba10b",
         "fltt": "2",
         "invt": "2",
         "fid": "f12",
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
         "fields": "f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f14,f15,f16,f17,f18,f20,f21,f22,f23,f24,f25,f26,f37,f38,f39,f40,f41,f45,f46,f48,f49,f57,f61,f100,f112,f113,f114,f115,f221",
-        "_": "1623833739532",
+        "_": "1745774336992",
     }
-    r = requests.get(url, params=params)
-    data_json = r.json()
+    proxies = {
+        "http": "http://127.0.0.1:7890",
+        "https": "http://127.0.0.1:7890"
+    }
+    max_retries = 3  # 设置最大重试次数
+    retries = 0
+    data = []
+    while retries < max_retries:
+        try:
+            r = requests.get(url, params=params, proxies=proxies)
+            r.raise_for_status()  # 检查请求是否成功
+            data_json = r.json()
+            data = data_json["data"]["diff"]
+            if not data:
+                print("请求成功但数据为空")
+                return pd.DataFrame()
+            break  # 请求成功，退出重试循环
+        except requests.RequestException as e:
+            print(f"请求失败，重试 {retries + 1}/{max_retries}: {e}")
+            retries += 1
+            time.sleep(10)  # 等待10秒后重试
+    if retries == max_retries:
+        print("达到最大重试次数，放弃请求")
+        return pd.DataFrame()
     data = data_json["data"]["diff"]
     if not data:
         return pd.DataFrame()
@@ -44,11 +69,26 @@ def stock_zh_a_spot_em() -> pd.DataFrame:
     while page_count > 1:
         page_current = page_current + 1
         params["pn"] = page_current
-        r = requests.get(url, params=params)
-        data_json = r.json()
-        _data = data_json["data"]["diff"]
-        data.extend(_data)
-        page_count =page_count - 1
+        print("start to get page {}".format(page_current))
+        max_retries = 3  # 设置最大重试次数
+        retries = 0
+        while retries < max_retries:
+            try:
+                r = requests.get(url, params=params, proxies=proxies)
+                r.raise_for_status()  # 检查请求是否成功
+                data_json = r.json()
+                _data = data_json["data"]["diff"]
+                data.extend(_data)
+                time.sleep(random.randint(2, 6))
+                break  # 请求成功，退出重试循环
+            except requests.RequestException as e:
+                print(f"请求失败，重试 {retries + 1}/{max_retries}: {e}")
+                retries += 1
+                time.sleep(10)  # 等待10秒后重试
+        if retries == max_retries:
+            print("达到最大重试次数，放弃请求")
+            return pd.DataFrame()
+        page_count = page_count - 1
 
     temp_df = pd.DataFrame(data)
     temp_df.columns = [
